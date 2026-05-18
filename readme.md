@@ -21,15 +21,31 @@ A beginner-friendly Microsoft Fabric accelerator for creating a small sales anal
 
 Follow these steps in order if you are new to Azure, Fabric, or PowerShell.
 
-### 1. Open PowerShell in the Project Folder
+### 1. Clone This Repository
+
+Open PowerShell and run:
+
+```powershell
+git clone https://github.com/SayanEmbee/fabric-sales-accelerator.git
+```
+
+This downloads the accelerator code to your machine.
+
+### 2. Open PowerShell in the Project Folder
 
 Go to the project folder:
+
+```powershell
+cd fabric-sales-accelerator
+```
+
+If you cloned it somewhere specific, go to that folder instead. Example:
 
 ```powershell
 cd C:\Users\015237\Desktop\fabric-sales-accelerator
 ```
 
-### 2. Check Azure CLI
+### 3. Check Azure CLI
 
 Run:
 
@@ -43,7 +59,7 @@ If this command is not found, install Azure CLI first:
 https://learn.microsoft.com/cli/azure/install-azure-cli
 ```
 
-### 3. Login to Azure
+### 4. Login to Azure
 
 Run:
 
@@ -63,7 +79,7 @@ If the wrong subscription is active, set the correct one:
 az account set --subscription "<your-subscription-id>"
 ```
 
-### 4. Install the Fabric CLI Extension
+### 5. Install the Fabric CLI Extension
 
 Run:
 
@@ -71,7 +87,7 @@ Run:
 az extension add --name microsoft-fabric --allow-preview true
 ```
 
-### 5. Review the Config File
+### 6. Review the Config File
 
 Open:
 
@@ -99,7 +115,7 @@ You can change these names if needed:
 - `capacityName`
 - `location`
 
-### 6. Create Fabric Capacity
+### 7. Create Fabric Capacity
 
 This step can create Azure cost. Run it only when you are ready:
 
@@ -107,7 +123,7 @@ This step can create Azure cost. Run it only when you are ready:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1
 ```
 
-### 7. Provision the Fabric Accelerator
+### 8. Provision the Fabric Accelerator
 
 Run:
 
@@ -123,7 +139,7 @@ This creates or updates:
 - Notebook
 - Data pipeline
 
-### 8. Check the Results
+### 9. Check the Results
 
 After the script completes, check:
 
@@ -133,7 +149,7 @@ After the script completes, check:
 - The Lakehouse contains `sales.csv` under `Files`
 - The notebook and pipeline exist in the workspace
 
-### 9. Common Beginner Fixes
+### 10. Common Beginner Fixes
 
 If PowerShell says scripts are disabled, use the commands exactly as shown with:
 
