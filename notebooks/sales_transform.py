@@ -1,3 +1,13 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# ## sales_transform
+# 
+# New notebook
+
+# In[ ]:
+
+
 # Fabric notebook source: sales_transform
 # This notebook expects the accelerator pipeline to create the sales table first.
 
@@ -24,3 +34,4 @@ summary_df = (
 summary_df.write.mode("overwrite").format("delta").saveAsTable(summary_table)
 
 display(summary_df)
+

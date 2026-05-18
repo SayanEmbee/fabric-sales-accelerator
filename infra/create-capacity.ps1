@@ -29,6 +29,15 @@ if ([string]::IsNullOrWhiteSpace($capacitySku)) {
     exit 1
 }
 
+function Assert-LastExitCode {
+    param ([Parameter(Mandatory = $true)][string]$Message)
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: $Message"
+        exit 1
+    }
+}
+
 function Invoke-AzCommand {
     param (
         [Parameter(Mandatory = $true)]
@@ -84,6 +93,28 @@ function Read-Value {
     }
 
     return $value
+}
+
+function Get-CapacityAdministrators {
+    param ([Parameter(Mandatory = $true)]$Config)
+
+    if ($Config.PSObject.Properties.Name -contains "capacityAdmins" -and $null -ne $Config.capacityAdmins) {
+        $configuredAdmins = @($Config.capacityAdmins) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+        if ($configuredAdmins.Count -gt 0) {
+            return $configuredAdmins
+        }
+    }
+
+    $currentUser = az account show --query user.name -o tsv
+    Assert-LastExitCode "Failed to read current Azure account user for capacity administration."
+
+    if ([string]::IsNullOrWhiteSpace($currentUser)) {
+        Write-Host "ERROR: Could not determine a capacity administrator. Add capacityAdmins to accelerator-config.json."
+        exit 1
+    }
+
+    return @($currentUser)
 }
 
 function Select-AzureSubscription {
@@ -226,25 +257,39 @@ Write-Host ""
 Write-Host "Creating Fabric Capacity..."
 
 $capacityExists = $false
-az fabric capacity show --resource-group $resourceGroup --name $capacityName *> $null
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+az fabric capacity show --resource-group $resourceGroup --name $capacityName 1> $null 2> $null
+$capacityShowExitCode = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorActionPreference
 
-if ($LASTEXITCODE -eq 0) {
+if ($capacityShowExitCode -eq 0) {
     $capacityExists = $true
     Write-Host "Fabric capacity already exists:" $capacityName
 }
 else {
+    $capacitySkuArgument = "{name:$capacitySku,tier:Fabric}"
+    $capacityAdmins = Get-CapacityAdministrators -Config $config
+    $capacityAdministrationArgument = "{members:[$($capacityAdmins -join ',')]}"
+
     Invoke-AzCommand `
       -Command { az fabric capacity create `
           --resource-group $resourceGroup `
           --name $capacityName `
-          --sku $capacitySku `
+          --administration $capacityAdministrationArgument `
+          --sku $capacitySkuArgument `
           --location $location } `
       -ErrorMessage "ERROR: Failed to create Fabric capacity."
 }
 
-$capacity = az fabric capacity show --resource-group $resourceGroup --name $capacityName -o json | ConvertFrom-Json
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$capacityJson = az fabric capacity show --resource-group $resourceGroup --name $capacityName -o json 2> $null
+$capacityShowExitCode = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorActionPreference
 
-if ($LASTEXITCODE -eq 0 -and $capacity) {
+if ($capacityShowExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($capacityJson)) {
+    $capacity = $capacityJson | ConvertFrom-Json
     $capacityId = $capacity.properties.capacityId
 
     if ([string]::IsNullOrWhiteSpace($capacityId)) {

@@ -90,10 +90,13 @@ function Invoke-FabricApi {
 }
 
 function Wait-FabricOperation {
-    param ([Parameter(Mandatory = $true)]$Response)
+    param (
+        [Parameter(Mandatory = $true)]$Response,
+        [bool]$ExitOnFailure = $true
+    )
 
     if ($Response.StatusCode -ne 202) {
-        return
+        return $true
     }
 
     $location = $Response.Headers["Location"]
@@ -122,13 +125,18 @@ function Wait-FabricOperation {
         Write-Host "Operation status:" $status
 
         if ($status -in @("Succeeded", "Success", "Completed") -or $status -eq 3) {
-            return
+            return $true
         }
 
         if ($status -in @("Failed", "Cancelled", "Canceled") -or $status -eq 4) {
             Write-Host "ERROR: Fabric operation failed."
             $operation.Body | ConvertTo-Json -Depth 20
-            exit 1
+
+            if ($ExitOnFailure) {
+                exit 1
+            }
+
+            return $false
         }
 
         $Response = $operation
@@ -158,25 +166,117 @@ function Set-ConfigValue {
 
 function Get-FirstByDisplayName {
     param (
-        [Parameter(Mandatory = $true)]$Items,
+        $Items,
         [Parameter(Mandatory = $true)][string]$DisplayName
     )
 
-    return @($Items | Where-Object { $_.displayName -eq $DisplayName } | Select-Object -First 1)[0]
+    $matches = @($Items | Where-Object { $_.displayName -eq $DisplayName } | Select-Object -First 1)
+
+    if ($matches.Count -eq 0) {
+        return $null
+    }
+
+    return $matches[0]
 }
 
 function Get-CollectionItems {
-    param ([Parameter(Mandatory = $true)]$ResponseBody)
+    param ($ResponseBody)
+
+    if ($null -eq $ResponseBody) {
+        return @()
+    }
 
     if ($ResponseBody.PSObject.Properties.Name -contains "value") {
-        return $ResponseBody.value
+        return @($ResponseBody.value)
     }
 
     if ($ResponseBody.PSObject.Properties.Name -contains "data") {
-        return $ResponseBody.data
+        return @($ResponseBody.data)
     }
 
     return @()
+}
+
+function New-WorkspaceFolder {
+    param (
+        [Parameter(Mandatory = $true)][string]$WorkspaceId,
+        [Parameter(Mandatory = $true)][string]$FolderName,
+        [string]$ParentFolderId = ""
+    )
+
+    # Check if folder already exists
+    $path = "/workspaces/$WorkspaceId/folders"
+    $folders = Invoke-FabricApi -Method "GET" -Path $path
+    $folderList = Get-CollectionItems -ResponseBody $folders.Body
+    
+    $existingFolder = $folderList | Where-Object { $_.displayName -eq $FolderName } | Select-Object -First 1
+
+    if ($null -ne $existingFolder) {
+        Write-Host "Folder already exists:" $FolderName "(" $existingFolder.id ")"
+        return $existingFolder.id
+    }
+
+    # Create new folder
+    $body = @{
+        displayName = $FolderName
+        description = "Created by Fabric Sales Analytics Accelerator"
+    }
+    
+    if (-not [string]::IsNullOrWhiteSpace($ParentFolderId)) {
+        $body.Add("parentFolderId", $ParentFolderId)
+    }
+
+    $response = Invoke-FabricApi -Method "POST" -Path $path -Body $body
+    $folder = $response.Body
+
+    Write-Host "Folder created:" $FolderName "(" $folder.id ")"
+    return $folder.id
+}
+
+function New-WorkspaceFolderStructure {
+    param (
+        [Parameter(Mandatory = $true)][string]$WorkspaceId
+    )
+
+    Write-Host ""
+    Write-Host "Creating workspace folder structure..."
+
+    # Create main folders
+    $dataIngestionFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Data Ingestion"
+    $resourcesFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Resources"
+    $reportsFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Reports"
+
+    # Create subfolders in Data Ingestion (for future use)
+    # These can be used when deploying additional pipelines
+    $auditFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Audit" -ParentFolderId $dataIngestionFolderId
+    $notificationFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Notification" -ParentFolderId $dataIngestionFolderId
+    $mainDataIngestionFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Main Data Ingestion" -ParentFolderId $dataIngestionFolderId
+
+    # Create subfolders in Resources
+    $lakehousesFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Lakehouses" -ParentFolderId $resourcesFolderId
+    $warehousesFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Warehouses" -ParentFolderId $resourcesFolderId
+    $notebooksFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Notebooks" -ParentFolderId $resourcesFolderId
+
+    # Create subfolders in Reports
+    $powerBIReportsFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Power BI Reports" -ParentFolderId $reportsFolderId
+    $dashboardsFolderId = New-WorkspaceFolder -WorkspaceId $WorkspaceId -FolderName "Dashboards" -ParentFolderId $reportsFolderId
+
+    Write-Host "Folder structure created successfully"
+    Write-Host ""
+
+    return @{
+        DataIngestion = $dataIngestionFolderId
+        Resources = $resourcesFolderId
+        Reports = $reportsFolderId
+        Audit = $auditFolderId
+        Notification = $notificationFolderId
+        MainDataIngestion = $mainDataIngestionFolderId
+        Lakehouses = $lakehousesFolderId
+        Warehouses = $warehousesFolderId
+        Notebooks = $notebooksFolderId
+        PowerBIReports = $powerBIReportsFolderId
+        Dashboards = $dashboardsFolderId
+    }
 }
 
 function Get-CapacityId {
@@ -210,12 +310,55 @@ function Get-CapacityId {
         $candidate = $capacity.capacityId
     }
 
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        $fabricCapacities = Invoke-FabricApi -Method "GET" -Path "/capacities"
+        $capacityItems = Get-CollectionItems -ResponseBody $fabricCapacities.Body
+        $fabricCapacity = Get-FirstByDisplayName -Items $capacityItems -DisplayName $Config.capacityName
+
+        if ($null -ne $fabricCapacity) {
+            $candidate = $fabricCapacity.id
+        }
+    }
+
     if (-not [string]::IsNullOrWhiteSpace($candidate)) {
         Set-ConfigValue -Config $Config -Name "capacityId" -Value $candidate
         Save-Config -Config $Config
     }
 
     return $candidate
+}
+
+function Ensure-WorkspaceCapacity {
+    param (
+        [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)][string]$WorkspaceId
+    )
+
+    $capacityId = Get-CapacityId -Config $Config
+
+    if ([string]::IsNullOrWhiteSpace($capacityId)) {
+        Write-Host "WARNING: No Fabric capacityId was found. Lakehouse creation may fail if the workspace is not assigned to Fabric capacity."
+        return
+    }
+
+    $workspaceResponse = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId"
+    $assignedCapacityId = $workspaceResponse.Body.capacityId
+
+    if ([string]::IsNullOrWhiteSpace($assignedCapacityId)) {
+        $assignedCapacityId = $workspaceResponse.Body.CapacityId
+    }
+
+    if ($assignedCapacityId -eq $capacityId) {
+        Write-Host "Workspace is already assigned to Fabric capacity:" $capacityId
+        return
+    }
+
+    $body = @{
+        capacityId = $capacityId
+    }
+    $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/assignToCapacity" -Body $body
+    $null = Wait-FabricOperation -Response $response
+    Write-Host "Workspace assigned to Fabric capacity:" $capacityId
 }
 
 function Ensure-Workspace {
@@ -256,7 +399,8 @@ function Ensure-Workspace {
 function Ensure-Lakehouse {
     param (
         [Parameter(Mandatory = $true)]$Config,
-        [Parameter(Mandatory = $true)][string]$WorkspaceId
+        [Parameter(Mandatory = $true)][string]$WorkspaceId,
+        [string]$FolderId = ""
     )
 
     if (-not [string]::IsNullOrWhiteSpace($Config.lakehouseId)) {
@@ -274,8 +418,13 @@ function Ensure-Lakehouse {
             displayName = $Config.lakehouseName
             description = "Created by Fabric Sales Analytics Accelerator"
         }
+        
+        if (-not [string]::IsNullOrWhiteSpace($FolderId)) {
+            $body.Add("folderId", $FolderId)
+        }
+        
         $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/lakehouses" -Body $body
-        Wait-FabricOperation -Response $response
+        $null = Wait-FabricOperation -Response $response
 
         if ($response.Body) {
             $lakehouse = $response.Body
@@ -334,9 +483,9 @@ function Upload-SampleData {
     }
     catch {}
 
-    Invoke-WebRequest -Method "PUT" -Uri "$baseUri?resource=file" -Headers $headers -UseBasicParsing | Out-Null
-    Invoke-WebRequest -Method "PATCH" -Uri "$baseUri?action=append&position=0" -Headers $headers -InFile $localSampleDataPath -ContentType "application/octet-stream" -UseBasicParsing | Out-Null
-    Invoke-WebRequest -Method "PATCH" -Uri "$baseUri?action=flush&position=$fileLength" -Headers $headers -UseBasicParsing | Out-Null
+    Invoke-WebRequest -Method "PUT" -Uri "${baseUri}?resource=file" -Headers $headers -UseBasicParsing | Out-Null
+    Invoke-WebRequest -Method "PATCH" -Uri "${baseUri}?action=append&position=0" -Headers $headers -InFile $localSampleDataPath -ContentType "application/octet-stream" -UseBasicParsing | Out-Null
+    Invoke-WebRequest -Method "PATCH" -Uri "${baseUri}?action=flush&position=$fileLength" -Headers $headers -UseBasicParsing | Out-Null
 
     Write-Host "Uploaded sample data to Lakehouse Files/$SourceFile"
 }
@@ -376,7 +525,8 @@ function Ensure-DataPipeline {
     param (
         [Parameter(Mandatory = $true)]$Config,
         [Parameter(Mandatory = $true)][string]$WorkspaceId,
-        [Parameter(Mandatory = $true)]$Definition
+        [Parameter(Mandatory = $true)]$Definition,
+        [string]$FolderId = ""
     )
 
     $pipeline = $null
@@ -397,8 +547,13 @@ function Ensure-DataPipeline {
             description = "Created by Fabric Sales Analytics Accelerator"
             definition = $Definition
         }
+        
+        if (-not [string]::IsNullOrWhiteSpace($FolderId)) {
+            $body.Add("folderId", $FolderId)
+        }
+        
         $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/dataPipelines" -Body $body
-        Wait-FabricOperation -Response $response
+        $null = Wait-FabricOperation -Response $response
 
         if ($response.Body) {
             $pipeline = $response.Body
@@ -413,8 +568,8 @@ function Ensure-DataPipeline {
         $body = @{
             definition = $Definition
         }
-        $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/dataPipelines/$($pipeline.id)/updateDefinition?updateMetadata=True" -Body $body
-        Wait-FabricOperation -Response $response
+        $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/dataPipelines/$($pipeline.id)/updateDefinition?updateMetadata=False" -Body $body
+        $null = Wait-FabricOperation -Response $response
     }
 
     if ($null -eq $pipeline) {
@@ -427,6 +582,23 @@ function Ensure-DataPipeline {
     Write-Host "Data pipeline ready:" $pipeline.displayName $pipeline.id
 
     return $pipeline.id
+}
+
+function Invoke-DataPipelineRun {
+    param (
+        [Parameter(Mandatory = $true)][string]$WorkspaceId,
+        [Parameter(Mandatory = $true)][string]$PipelineId,
+        [Parameter(Mandatory = $true)][string]$PipelineName
+    )
+
+    $body = @{
+        executionData = @{
+            pipelineName = $PipelineName
+        }
+    }
+    $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/items/$PipelineId/jobs/instances?jobType=Pipeline" -Body $body
+    $null = Wait-FabricOperation -Response $response
+    Write-Host "Data pipeline execution started:" $PipelineId
 }
 
 function New-NotebookDefinition {
@@ -471,7 +643,8 @@ function Ensure-Notebook {
     param (
         [Parameter(Mandatory = $true)]$Config,
         [Parameter(Mandatory = $true)][string]$WorkspaceId,
-        [Parameter(Mandatory = $true)]$Definition
+        [Parameter(Mandatory = $true)]$Definition,
+        [string]$FolderId = ""
     )
 
     if ([string]::IsNullOrWhiteSpace($Config.notebookName)) {
@@ -497,8 +670,18 @@ function Ensure-Notebook {
             description = "Created by Fabric Sales Analytics Accelerator"
             definition = $Definition
         }
+        
+        if (-not [string]::IsNullOrWhiteSpace($FolderId)) {
+            $body.Add("folderId", $FolderId)
+        }
+        
         $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/notebooks" -Body $body
-        Wait-FabricOperation -Response $response
+        $notebookOperationSucceeded = Wait-FabricOperation -Response $response -ExitOnFailure $false
+
+        if (-not $notebookOperationSucceeded) {
+            Write-Host "WARNING: Notebook deployment failed. Continuing with data pipeline deployment."
+            return ""
+        }
 
         if ($response.Body) {
             $notebook = $response.Body
@@ -514,7 +697,12 @@ function Ensure-Notebook {
             definition = $Definition
         }
         $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/notebooks/$($notebook.id)/updateDefinition?updateMetadata=True" -Body $body
-        Wait-FabricOperation -Response $response
+        $notebookOperationSucceeded = Wait-FabricOperation -Response $response -ExitOnFailure $false
+
+        if (-not $notebookOperationSucceeded) {
+            Write-Host "WARNING: Notebook update failed. Continuing with data pipeline deployment."
+            return $notebook.id
+        }
     }
 
     if ($null -eq $notebook) {
@@ -553,8 +741,16 @@ Write-Step "Ensuring Fabric workspace"
 $workspaceId = Ensure-Workspace -Config $config
 
 $config = Get-Content $configPath | ConvertFrom-Json
-Write-Step "Ensuring Lakehouse"
-$lakehouseId = Ensure-Lakehouse -Config $config -WorkspaceId $workspaceId
+Write-Step "Ensuring workspace capacity assignment"
+Ensure-WorkspaceCapacity -Config $config -WorkspaceId $workspaceId
+
+$config = Get-Content $configPath | ConvertFrom-Json
+Write-Step "Creating workspace folder structure"
+$folderStructure = New-WorkspaceFolderStructure -WorkspaceId $workspaceId
+
+$config = Get-Content $configPath | ConvertFrom-Json
+Write-Step "Ensuring Lakehouse in Resources > Lakehouses folder"
+$lakehouseId = Ensure-Lakehouse -Config $config -WorkspaceId $workspaceId -FolderId $folderStructure.Lakehouses
 
 $config = Get-Content $configPath | ConvertFrom-Json
 
@@ -564,21 +760,29 @@ if ($config.loadSampleData -eq $true) {
 }
 
 $config = Get-Content $configPath | ConvertFrom-Json
-
-if (-not [string]::IsNullOrWhiteSpace($config.notebookName)) {
-    Write-Step "Deploying Fabric notebook"
-    $notebookDefinition = New-NotebookDefinition -Config $config
-    Ensure-Notebook -Config $config -WorkspaceId $workspaceId -Definition $notebookDefinition | Out-Null
-}
-
-$config = Get-Content $configPath | ConvertFrom-Json
-Write-Step "Generating and deploying Fabric data pipeline"
+Write-Step "Generating and deploying Fabric data pipeline in Data Ingestion folder"
 $definition = New-PipelineDefinition -Config $config -WorkspaceId $workspaceId -LakehouseId $lakehouseId
-Ensure-DataPipeline -Config $config -WorkspaceId $workspaceId -Definition $definition | Out-Null
+$pipelineId = Ensure-DataPipeline -Config $config -WorkspaceId $workspaceId -Definition $definition -FolderId $folderStructure.MainDataIngestion
+
+Write-Step "Executing Fabric data pipeline"
+Invoke-DataPipelineRun -WorkspaceId $workspaceId -PipelineId $pipelineId -PipelineName $config.pipelineName
 
 Write-Host ""
 Write-Host "Provisioning completed successfully."
 Write-Host "Workspace ID:" $workspaceId
 Write-Host "Lakehouse ID:" $lakehouseId
+Write-Host "Pipeline ID:" $pipelineId
 Write-Host "Pipeline JSON:" $pipelineOutputPath
+Write-Host "Folder Structure:"
+Write-Host "  - Data Ingestion (ID: $($folderStructure.DataIngestion))"
+Write-Host "    - Main Data Ingestion (ID: $($folderStructure.MainDataIngestion))"
+Write-Host "    - Audit (ID: $($folderStructure.Audit))"
+Write-Host "    - Notification (ID: $($folderStructure.Notification))"
+Write-Host "  - Resources (ID: $($folderStructure.Resources))"
+Write-Host "    - Lakehouses (ID: $($folderStructure.Lakehouses))"
+Write-Host "    - Warehouses (ID: $($folderStructure.Warehouses))"
+Write-Host "    - Notebooks (ID: $($folderStructure.Notebooks))"
+Write-Host "  - Reports (ID: $($folderStructure.Reports))"
+Write-Host "    - Power BI Reports (ID: $($folderStructure.PowerBIReports))"
+Write-Host "    - Dashboards (ID: $($folderStructure.Dashboards))"
 Write-Host ""

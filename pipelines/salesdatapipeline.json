@@ -1,0 +1,150 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+
+  "parameters": {
+    "SalesLakehouse": {
+      "type": "string"
+    },
+    "WorkspaceId": {
+      "type": "string"
+    },
+    "SourceFile": {
+      "type": "string"
+    },
+    "DestinationTable": {
+      "type": "string"
+    }
+  },
+
+  "variables": {},
+
+  "resources": [
+    {
+      "name": "salesdatapipeline",
+      "type": "pipelines",
+      "apiVersion": "2018-06-01",
+
+      "properties": {
+        "activities": [
+          {
+            "name": "CSVtoLakehouseTables",
+            "type": "Copy",
+
+            "dependsOn": [],
+
+            "policy": {
+              "timeout": "0.12:00:00",
+              "retry": 0,
+              "retryIntervalInSeconds": 30,
+              "secureOutput": false,
+              "secureInput": false
+            },
+
+            "typeProperties": {
+              "source": {
+                "type": "DelimitedTextSource",
+
+                "storeSettings": {
+                  "type": "LakehouseReadSettings",
+                  "recursive": true,
+                  "enablePartitionDiscovery": false
+                },
+
+                "formatSettings": {
+                  "type": "DelimitedTextReadSettings"
+                },
+
+                "datasetSettings": {
+                  "annotations": [],
+
+                  "linkedService": {
+                    "name": "SalesLakehouse",
+
+                    "properties": {
+                      "annotations": [],
+                      "type": "Lakehouse",
+
+                      "typeProperties": {
+                        "workspaceId": "84d80911-4f4e-4a3f-a778-335dfe94765e",
+                        "artifactId": "8ed26dda-a7bf-4ae7-bc6a-000656d81109",
+                        "rootFolder": "Files"
+                      }
+                    }
+                  },
+
+                  "type": "DelimitedText",
+
+                  "typeProperties": {
+                    "location": {
+                      "type": "LakehouseLocation",
+                      "fileName": "sales.csv"
+                    },
+
+                    "columnDelimiter": ",",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": true,
+                    "quoteChar": "\""
+                  },
+
+                  "schema": []
+                }
+              },
+
+              "sink": {
+                "type": "LakehouseTableSink",
+
+                "tableActionOption": "OverwriteSchema",
+                "partitionOption": "None",
+                "applyVOrder": false,
+
+                "datasetSettings": {
+                  "annotations": [],
+
+                  "linkedService": {
+                    "name": "SalesLakehouse",
+
+                    "properties": {
+                      "annotations": [],
+                      "type": "Lakehouse",
+
+                      "typeProperties": {
+                        "workspaceId": "84d80911-4f4e-4a3f-a778-335dfe94765e",
+                        "artifactId": "8ed26dda-a7bf-4ae7-bc6a-000656d81109",
+                        "rootFolder": "Tables"
+                      }
+                    }
+                  },
+
+                  "type": "LakehouseTable",
+
+                  "schema": [],
+
+                  "typeProperties": {
+                    "schema": "dbo",
+                    "table": "sales"
+                  }
+                }
+              },
+
+              "enableStaging": false,
+
+              "translator": {
+                "type": "TabularTranslator",
+                "typeConversion": true,
+
+                "typeConversionSettings": {
+                  "allowDataTruncation": true,
+                  "treatBooleanAsNumber": false
+                }
+              }
+            }
+          }
+        ]
+      },
+
+      "dependsOn": []
+    }
+  ]
+}
+
