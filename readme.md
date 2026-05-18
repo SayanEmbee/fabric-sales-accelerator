@@ -9,6 +9,8 @@ A beginner-friendly Microsoft Fabric accelerator for creating a small sales anal
 - Automated Lakehouse creation
 - Automated sample data upload to OneLake
 - Automated Fabric data pipeline import/deployment
+- Automated Fabric notebook import/deployment
+- GitHub Actions validation and optional provisioning workflow
 - Lakehouse copy pipeline template for CSV to Lakehouse table loading
 - Sample sales dataset
 - PowerShell deployment helper
@@ -28,12 +30,16 @@ fabric-sales-accelerator/
 +-- infra/
 |   +-- create-capacity.ps1
 +-- notebooks/
+|   +-- sales_transform.py
 +-- pipelines/
 +-- powerbi/
 |   +-- SalesDashboard.pbix
 +-- scripts/
     +-- deploy.ps1
     +-- provision-fabric.ps1
++-- .github/
+    +-- workflows/
+        +-- ci.yml
 ```
 
 ## Prerequisites
@@ -69,6 +75,8 @@ Update `config/accelerator-config.json` before deployment:
   "lakehouseId": "",
   "pipelineName": "salesdatapipeline",
   "pipelineId": "",
+  "notebookName": "sales_transform",
+  "notebookId": "",
   "resourceGroup": "rg-fabric-dev",
   "capacityName": "fabricf2dev",
   "capacityId": "",
@@ -80,7 +88,7 @@ Update `config/accelerator-config.json` before deployment:
 }
 ```
 
-Leave `workspaceId`, `lakehouseId`, `pipelineId`, and `capacityId` blank for a first run. The automation script fills them in after it finds or creates the resources.
+Leave `workspaceId`, `lakehouseId`, `pipelineId`, `notebookId`, and `capacityId` blank for a first run. The automation script fills them in after it finds or creates the resources.
 
 ## Create Fabric Capacity
 
@@ -112,9 +120,42 @@ This script:
 - Finds or creates the Fabric workspace
 - Finds or creates the Lakehouse
 - Uploads `data/sales.csv` into the Lakehouse `Files` area
+- Creates or updates the Fabric notebook item from `notebooks/sales_transform.py`
 - Generates `pipelines/salesdatapipeline.json`
 - Creates or updates the Fabric data pipeline item
 - Saves discovered IDs back into `config/accelerator-config.json`
+
+## Notebook Automation
+
+Notebook source:
+
+```text
+notebooks/sales_transform.py
+```
+
+The provisioning script deploys it as a Fabric notebook using the Notebook REST API in `fabricGitSource` format. The notebook reads the `sales` table and writes a Delta summary table named `sales_summary_by_region`.
+
+## CI/CD
+
+GitHub Actions workflow:
+
+```text
+.github/workflows/ci.yml
+```
+
+The `validate` job runs on push and pull request. It checks:
+
+- JSON syntax
+- PowerShell syntax
+- Required accelerator assets
+
+The `provision` job is manual-only through `workflow_dispatch`. Set `provision_fabric` to `true` when starting the workflow. It requires these GitHub secrets:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+The Azure identity must have permission to create/manage the Azure capacity and Fabric resources.
 
 ## Generate Pipeline Only
 
@@ -159,8 +200,8 @@ The pipeline expects this file to be available in the Lakehouse `Files` area usi
 - [x] Automated Lakehouse creation
 - [x] Automated sample data upload
 - [x] Automated pipeline import/deployment to Fabric
-- [ ] Notebook automation
-- [ ] CI/CD
+- [x] Notebook automation
+- [x] CI/CD
 
 ## Validation
 
@@ -188,6 +229,4 @@ If PowerShell blocks script execution, use the `-ExecutionPolicy Bypass` command
 
 - Medallion architecture
 - Incremental data loading
-- Notebook-driven transformations
 - Automated Power BI publishing
-- GitHub Actions CI/CD

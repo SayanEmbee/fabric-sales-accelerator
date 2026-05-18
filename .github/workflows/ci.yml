@@ -1,0 +1,106 @@
+name: Fabric Sales Accelerator CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      provision_fabric:
+        description: Run Fabric provisioning after validation
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  validate:
+    name: Validate accelerator
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate JSON
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Get-Content .\config\accelerator-config.json -Raw | ConvertFrom-Json | Out-Null
+          Get-Content .\config\salesdatapipeline.json -Raw | ConvertFrom-Json | Out-Null
+
+      - name: Validate PowerShell syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $files = @(
+            '.\infra\create-capacity.ps1',
+            '.\scripts\deploy.ps1',
+            '.\scripts\provision-fabric.ps1'
+          )
+
+          foreach ($file in $files) {
+            $errors = $null
+            $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $file -Raw), [ref]$errors)
+
+            if ($errors) {
+              $errors | Format-List
+              exit 1
+            }
+          }
+
+      - name: Validate accelerator assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $requiredFiles = @(
+            '.\data\sales.csv',
+            '.\notebooks\sales_transform.py',
+            '.\powerbi\SalesDashboard.pbix',
+            '.\README.md'
+          )
+
+          foreach ($file in $requiredFiles) {
+            if (!(Test-Path $file)) {
+              throw "Missing required file: $file"
+            }
+          }
+
+  provision:
+    name: Provision Fabric
+    runs-on: windows-latest
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && inputs.provision_fabric == 'true'
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Fabric CLI extension
+        shell: pwsh
+        run: |
+          az extension add --name microsoft-fabric --allow-preview true
+
+      - name: Create capacity
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1
+
+      - name: Provision Fabric workspace, Lakehouse, data, notebook, and pipeline
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\provision-fabric.ps1

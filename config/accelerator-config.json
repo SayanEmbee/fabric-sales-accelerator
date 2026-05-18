@@ -5,6 +5,8 @@
   "lakehouseId": "",
   "pipelineName": "salesdatapipeline",
   "pipelineId": "",
+  "notebookName": "sales_transform",
+  "notebookId": "",
   "resourceGroup": "rg-fabric-dev",
   "capacityName": "fabricf2dev",
   "capacityId": "",

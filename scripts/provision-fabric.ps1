@@ -5,6 +5,7 @@ $configPath = Join-Path $repoRoot "config/accelerator-config.json"
 $pipelineTemplatePath = Join-Path $repoRoot "config/salesdatapipeline.json"
 $pipelineOutputPath = Join-Path $repoRoot "pipelines/salesdatapipeline.json"
 $dataRoot = Join-Path $repoRoot "data"
+$notebooksRoot = Join-Path $repoRoot "notebooks"
 $fabricApiRoot = "https://api.fabric.microsoft.com/v1"
 
 function Write-Step {
@@ -428,6 +429,106 @@ function Ensure-DataPipeline {
     return $pipeline.id
 }
 
+function New-NotebookDefinition {
+    param ([Parameter(Mandatory = $true)]$Config)
+
+    $notebookSourcePath = Join-Path $notebooksRoot "$($Config.notebookName).py"
+
+    if (!(Test-Path $notebookSourcePath)) {
+        Write-Host "ERROR: Notebook source file not found at $notebookSourcePath"
+        exit 1
+    }
+
+    $notebookContent = Get-Content $notebookSourcePath -Raw
+    $notebookPayload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($notebookContent))
+    $platform = @{
+        version = "1.0"
+        metadata = @{
+            type = "Notebook"
+            displayName = $Config.notebookName
+        }
+    } | ConvertTo-Json -Depth 20
+    $platformPayload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($platform))
+
+    return @{
+        format = "fabricGitSource"
+        parts = @(
+            @{
+                path = "notebook-content.py"
+                payload = $notebookPayload
+                payloadType = "InlineBase64"
+            },
+            @{
+                path = ".platform"
+                payload = $platformPayload
+                payloadType = "InlineBase64"
+            }
+        )
+    }
+}
+
+function Ensure-Notebook {
+    param (
+        [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)][string]$WorkspaceId,
+        [Parameter(Mandatory = $true)]$Definition
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Config.notebookName)) {
+        Write-Host "Notebook deployment skipped because notebookName is blank."
+        return ""
+    }
+
+    $notebook = $null
+
+    if (-not [string]::IsNullOrWhiteSpace($Config.notebookId)) {
+        $existing = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/notebooks/$($Config.notebookId)"
+        $notebook = $existing.Body
+    }
+    else {
+        $notebooks = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/notebooks"
+        $notebookItems = Get-CollectionItems -ResponseBody $notebooks.Body
+        $notebook = Get-FirstByDisplayName -Items $notebookItems -DisplayName $Config.notebookName
+    }
+
+    if ($null -eq $notebook) {
+        $body = @{
+            displayName = $Config.notebookName
+            description = "Created by Fabric Sales Analytics Accelerator"
+            definition = $Definition
+        }
+        $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/notebooks" -Body $body
+        Wait-FabricOperation -Response $response
+
+        if ($response.Body) {
+            $notebook = $response.Body
+        }
+        else {
+            $notebooks = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/notebooks"
+            $notebookItems = Get-CollectionItems -ResponseBody $notebooks.Body
+            $notebook = Get-FirstByDisplayName -Items $notebookItems -DisplayName $Config.notebookName
+        }
+    }
+    else {
+        $body = @{
+            definition = $Definition
+        }
+        $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/notebooks/$($notebook.id)/updateDefinition?updateMetadata=True" -Body $body
+        Wait-FabricOperation -Response $response
+    }
+
+    if ($null -eq $notebook) {
+        Write-Host "ERROR: Notebook was not found after deployment."
+        exit 1
+    }
+
+    Set-ConfigValue -Config $Config -Name "notebookId" -Value $notebook.id
+    Save-Config -Config $Config
+    Write-Host "Notebook ready:" $notebook.displayName $notebook.id
+
+    return $notebook.id
+}
+
 Write-Host ""
 Write-Host "======================================="
 Write-Host " FABRIC SALES ACCELERATOR PROVISIONING "
@@ -462,6 +563,15 @@ if ($config.loadSampleData -eq $true) {
     Upload-SampleData -WorkspaceId $workspaceId -LakehouseId $lakehouseId -SourceFile $config.sourceFile
 }
 
+$config = Get-Content $configPath | ConvertFrom-Json
+
+if (-not [string]::IsNullOrWhiteSpace($config.notebookName)) {
+    Write-Step "Deploying Fabric notebook"
+    $notebookDefinition = New-NotebookDefinition -Config $config
+    Ensure-Notebook -Config $config -WorkspaceId $workspaceId -Definition $notebookDefinition | Out-Null
+}
+
+$config = Get-Content $configPath | ConvertFrom-Json
 Write-Step "Generating and deploying Fabric data pipeline"
 $definition = New-PipelineDefinition -Config $config -WorkspaceId $workspaceId -LakehouseId $lakehouseId
 Ensure-DataPipeline -Config $config -WorkspaceId $workspaceId -Definition $definition | Out-Null
