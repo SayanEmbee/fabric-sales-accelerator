@@ -1,0 +1,6 @@
+OrderID,Product,Category,Region,SalesAmount,OrderDate
+1001,Laptop,Electronics,East,55000,2026-01-10
+1002,Mouse,Electronics,West,1200,2026-01-11
+1003,Chair,Furniture,South,7000,2026-01-12
+1004,Desk,Furniture,North,15000,2026-01-15
+1005,Monitor,Electronics,East,18000,2026-01-20
