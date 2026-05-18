@@ -1,0 +1,5 @@
+{
+  "workspaceName": "SalesAnalyticsWorkspace",
+  "lakehouseName": "SalesLakehouse",
+  "loadSampleData": true
+}
