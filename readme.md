@@ -101,6 +101,7 @@ For a first run, you can leave these values blank:
 - `lakehouseId`
 - `pipelineId`
 - `notebookId`
+- `subscriptionId`
 - `capacityId`
 
 The scripts fill them in after resources are created or found.
@@ -122,6 +123,14 @@ This step can create Azure cost. Run it only when you are ready:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1
 ```
+
+The script will ask you to:
+
+- Choose which Azure subscription to use
+- Enter the resource group name
+- Enter the Fabric capacity name
+
+If you press Enter for resource group or capacity name, the script uses the default values from `config/accelerator-config.json`.
 
 ### 8. Provision the Fabric Accelerator
 
@@ -230,6 +239,7 @@ Update `config/accelerator-config.json` before deployment:
   "pipelineId": "",
   "notebookName": "sales_transform",
   "notebookId": "",
+  "subscriptionId": "",
   "resourceGroup": "rg-fabric-dev",
   "capacityName": "fabricf2dev",
   "capacityId": "",
@@ -241,7 +251,7 @@ Update `config/accelerator-config.json` before deployment:
 }
 ```
 
-Leave `workspaceId`, `lakehouseId`, `pipelineId`, `notebookId`, and `capacityId` blank for a first run. The automation script fills them in after it finds or creates the resources.
+Leave `workspaceId`, `lakehouseId`, `pipelineId`, `notebookId`, `subscriptionId`, and `capacityId` blank for a first run. The automation script fills them in after it finds or creates the resources.
 
 ## Create Fabric Capacity
 
@@ -251,14 +261,28 @@ Run this only when you want to create or update Azure resources. Fabric capacity
 powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1
 ```
 
+The script prompts you to choose the Azure subscription and enter the resource group and capacity names.
+
 The script creates or updates:
 
-- Resource group: `rg-fabric-dev`
-- Capacity: `fabricf2dev`
-- SKU: `F2`
-- Location: `CentralIndia`
+- Resource group: the name you enter
+- Capacity: the name you enter
+- SKU: the `capacitySku` value from config
+- Location: the `location` value from config
 
-It also saves `capacityId` back into `config/accelerator-config.json` when the Azure CLI returns it.
+It saves `subscriptionId`, `resourceGroup`, `capacityName`, and `capacityId` back into `config/accelerator-config.json`.
+
+For unattended runs, such as GitHub Actions, use config values without prompting:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1 -UseConfig
+```
+
+You can also pass values directly:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1 -SubscriptionId "<subscription-id>" -ResourceGroup "<resource-group-name>" -CapacityName "<capacity-name>"
+```
 
 ## Provision Fabric Accelerator
 

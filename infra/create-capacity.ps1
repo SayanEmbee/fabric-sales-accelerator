@@ -1,3 +1,10 @@
+param (
+    [switch]$UseConfig,
+    [string]$SubscriptionId,
+    [string]$ResourceGroup,
+    [string]$CapacityName
+)
+
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -9,20 +16,8 @@ if (!(Test-Path $configPath)) {
 }
 
 $config = Get-Content $configPath | ConvertFrom-Json
-$resourceGroup = $config.resourceGroup
-$capacityName = $config.capacityName
 $location = $config.location
 $capacitySku = $config.capacitySku
-
-if ([string]::IsNullOrWhiteSpace($resourceGroup)) {
-    Write-Host "ERROR: resourceGroup is missing in accelerator-config.json"
-    exit 1
-}
-
-if ([string]::IsNullOrWhiteSpace($capacityName)) {
-    Write-Host "ERROR: capacityName is missing in accelerator-config.json"
-    exit 1
-}
 
 if ([string]::IsNullOrWhiteSpace($location)) {
     Write-Host "ERROR: location is missing in accelerator-config.json"
@@ -51,6 +46,102 @@ function Invoke-AzCommand {
     }
 }
 
+function Set-ConfigValue {
+    param (
+        [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value
+    )
+
+    if ($Config.PSObject.Properties.Name -contains $Name) {
+        $Config.$Name = $Value
+    }
+    else {
+        $Config | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+    }
+}
+
+function Save-Config {
+    param ([Parameter(Mandatory = $true)]$Config)
+
+    $Config | ConvertTo-Json -Depth 20 | Set-Content $configPath
+}
+
+function Read-Value {
+    param (
+        [Parameter(Mandatory = $true)][string]$Prompt,
+        [string]$DefaultValue = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DefaultValue)) {
+        return Read-Host $Prompt
+    }
+
+    $value = Read-Host "$Prompt [$DefaultValue]"
+
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $DefaultValue
+    }
+
+    return $value
+}
+
+function Select-AzureSubscription {
+    param (
+        [string]$RequestedSubscriptionId,
+        [switch]$UseExistingConfig
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedSubscriptionId)) {
+        az account set --subscription $RequestedSubscriptionId
+        Assert-LastExitCode "Failed to select Azure subscription $RequestedSubscriptionId."
+        return $RequestedSubscriptionId
+    }
+
+    if ($UseExistingConfig -and -not [string]::IsNullOrWhiteSpace($config.subscriptionId)) {
+        az account set --subscription $config.subscriptionId
+        Assert-LastExitCode "Failed to select Azure subscription $($config.subscriptionId)."
+        return $config.subscriptionId
+    }
+
+    if ($UseExistingConfig) {
+        $currentId = az account show --query id -o tsv
+        Assert-LastExitCode "Failed to read current Azure subscription."
+        return $currentId
+    }
+
+    $subscriptions = az account list -o json | ConvertFrom-Json
+    Assert-LastExitCode "Failed to list Azure subscriptions."
+
+    if ($null -eq $subscriptions -or @($subscriptions).Count -eq 0) {
+        Write-Host "ERROR: No Azure subscriptions found for this login."
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "Choose Azure subscription:"
+
+    for ($i = 0; $i -lt @($subscriptions).Count; $i++) {
+        $subscription = @($subscriptions)[$i]
+        $marker = if ($subscription.isDefault) { "*" } else { " " }
+        Write-Host ("[{0}] {1} {2} ({3})" -f ($i + 1), $marker, $subscription.name, $subscription.id)
+    }
+
+    $choice = Read-Host "Enter subscription number"
+    $choiceNumber = 0
+
+    if (-not [int]::TryParse($choice, [ref]$choiceNumber) -or $choiceNumber -lt 1 -or $choiceNumber -gt @($subscriptions).Count) {
+        Write-Host "ERROR: Invalid subscription choice."
+        exit 1
+    }
+
+    $selected = @($subscriptions)[$choiceNumber - 1]
+    az account set --subscription $selected.id
+    Assert-LastExitCode "Failed to select Azure subscription $($selected.id)."
+
+    return $selected.id
+}
+
 Write-Host ""
 Write-Host "Checking Azure Login..."
 
@@ -65,6 +156,49 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Azure login failed."
     exit 1
 }
+
+Write-Host ""
+Write-Host "Selecting Azure Subscription..."
+
+$selectedSubscriptionId = Select-AzureSubscription -RequestedSubscriptionId $SubscriptionId -UseExistingConfig:$UseConfig
+Set-ConfigValue -Config $config -Name "subscriptionId" -Value $selectedSubscriptionId
+Save-Config -Config $config
+
+$resourceGroup = $ResourceGroup
+
+if ([string]::IsNullOrWhiteSpace($resourceGroup)) {
+    if ($UseConfig) {
+        $resourceGroup = $config.resourceGroup
+    }
+    else {
+        $resourceGroup = Read-Value -Prompt "Enter resource group name" -DefaultValue $config.resourceGroup
+    }
+}
+
+$capacityName = $CapacityName
+
+if ([string]::IsNullOrWhiteSpace($capacityName)) {
+    if ($UseConfig) {
+        $capacityName = $config.capacityName
+    }
+    else {
+        $capacityName = Read-Value -Prompt "Enter Fabric capacity name" -DefaultValue $config.capacityName
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($resourceGroup)) {
+    Write-Host "ERROR: Resource group name is required."
+    exit 1
+}
+
+if ([string]::IsNullOrWhiteSpace($capacityName)) {
+    Write-Host "ERROR: Fabric capacity name is required."
+    exit 1
+}
+
+Set-ConfigValue -Config $config -Name "resourceGroup" -Value $resourceGroup
+Set-ConfigValue -Config $config -Name "capacityName" -Value $capacityName
+Save-Config -Config $config
 
 Write-Host ""
 Write-Host "Checking Microsoft Fabric Azure CLI extension..."
@@ -118,14 +252,8 @@ if ($LASTEXITCODE -eq 0 -and $capacity) {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($capacityId)) {
-        if ($config.PSObject.Properties.Name -contains "capacityId") {
-            $config.capacityId = $capacityId
-        }
-        else {
-            $config | Add-Member -NotePropertyName "capacityId" -NotePropertyValue $capacityId
-        }
-
-        $config | ConvertTo-Json -Depth 20 | Set-Content $configPath
+        Set-ConfigValue -Config $config -Name "capacityId" -Value $capacityId
+        Save-Config -Config $config
         Write-Host "Capacity ID saved to accelerator-config.json:" $capacityId
     }
 }
