@@ -1,5 +1,10 @@
 {
   "workspaceName": "SalesAnalyticsWorkspace",
+  "workspaceId": "",
   "lakehouseName": "SalesLakehouse",
+  "pipelineName": "salesdatapipeline",
+  "capacityName": "fabricf2dev",
+  "sourceFile": "sales.csv",
+  "destinationTable": "sales",
   "loadSampleData": true
 }
