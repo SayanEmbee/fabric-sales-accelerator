@@ -17,6 +17,143 @@ A beginner-friendly Microsoft Fabric accelerator for creating a small sales anal
 - Power BI dashboard file
 - Repo structure ready for notebooks, pipeline exports, and future CI/CD
 
+## Start Here for Beginners
+
+Follow these steps in order if you are new to Azure, Fabric, or PowerShell.
+
+### 1. Open PowerShell in the Project Folder
+
+Go to the project folder:
+
+```powershell
+cd C:\Users\015237\Desktop\fabric-sales-accelerator
+```
+
+### 2. Check Azure CLI
+
+Run:
+
+```powershell
+az --version
+```
+
+If this command is not found, install Azure CLI first:
+
+```text
+https://learn.microsoft.com/cli/azure/install-azure-cli
+```
+
+### 3. Login to Azure
+
+Run:
+
+```powershell
+az login
+```
+
+Then confirm the active subscription:
+
+```powershell
+az account show
+```
+
+If the wrong subscription is active, set the correct one:
+
+```powershell
+az account set --subscription "<your-subscription-id>"
+```
+
+### 4. Install the Fabric CLI Extension
+
+Run:
+
+```powershell
+az extension add --name microsoft-fabric --allow-preview true
+```
+
+### 5. Review the Config File
+
+Open:
+
+```text
+config/accelerator-config.json
+```
+
+For a first run, you can leave these values blank:
+
+- `workspaceId`
+- `lakehouseId`
+- `pipelineId`
+- `notebookId`
+- `capacityId`
+
+The scripts fill them in after resources are created or found.
+
+You can change these names if needed:
+
+- `workspaceName`
+- `lakehouseName`
+- `pipelineName`
+- `notebookName`
+- `resourceGroup`
+- `capacityName`
+- `location`
+
+### 6. Create Fabric Capacity
+
+This step can create Azure cost. Run it only when you are ready:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1
+```
+
+### 7. Provision the Fabric Accelerator
+
+Run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\provision-fabric.ps1
+```
+
+This creates or updates:
+
+- Fabric workspace
+- Lakehouse
+- Sample data upload
+- Notebook
+- Data pipeline
+
+### 8. Check the Results
+
+After the script completes, check:
+
+- `config/accelerator-config.json` now has generated IDs
+- `pipelines/salesdatapipeline.json` exists
+- The Fabric workspace exists in the Fabric portal
+- The Lakehouse contains `sales.csv` under `Files`
+- The notebook and pipeline exist in the workspace
+
+### 9. Common Beginner Fixes
+
+If PowerShell says scripts are disabled, use the commands exactly as shown with:
+
+```powershell
+-ExecutionPolicy Bypass
+```
+
+If Azure says you do not have permission, ask your Azure/Fabric admin for:
+
+- Permission to create resource groups or Fabric capacity
+- Permission to create Fabric workspaces
+- Contributor access to the target Fabric workspace or capacity
+
+If the Fabric extension install fails, run:
+
+```powershell
+az config set extension.dynamic_install_allow_preview=true
+az extension add --name microsoft-fabric --allow-preview true
+```
+
 ## Project Structure
 
 ```text
