@@ -4,7 +4,12 @@
   "lakehouseName": "SalesLakehouse",
   "lakehouseId": "",
   "pipelineName": "salesdatapipeline",
+  "pipelineId": "",
+  "resourceGroup": "rg-fabric-dev",
   "capacityName": "fabricf2dev",
+  "capacityId": "",
+  "location": "CentralIndia",
+  "capacitySku": "F2",
   "sourceFile": "sales.csv",
   "destinationTable": "sales",
   "loadSampleData": true
