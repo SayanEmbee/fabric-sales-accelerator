@@ -492,17 +492,38 @@ function Upload-SampleData {
 
 function New-PipelineDefinition {
     param (
-        [Parameter(Mandatory = $true)]$Config,
+        [object]$PipelineConfig = $null,
         [Parameter(Mandatory = $true)][string]$WorkspaceId,
         [Parameter(Mandatory = $true)][string]$LakehouseId
     )
 
-    $pipelineJson = Get-Content $pipelineTemplatePath -Raw
+    if ($null -ne $PipelineConfig) {
+        $templateName = $PipelineConfig.templateName
+        if ([string]::IsNullOrEmpty($templateName)) {
+            $templateName = "salesdatapipeline.json"
+        }
+        $thisTemplatePath = Join-Path $repoRoot "config/$templateName"
+        $thisOutputPath = Join-Path $repoRoot "pipelines/$($PipelineConfig.pipelineName).json"
+        $sourceFile = $PipelineConfig.sourceFile
+        $destinationTable = $PipelineConfig.destinationTable
+    } else {
+        $thisTemplatePath = $pipelineTemplatePath
+        $thisOutputPath = $pipelineOutputPath
+        $sourceFile = $config.sourceFile
+        $destinationTable = $config.destinationTable
+    }
+
+    if (!(Test-Path $thisTemplatePath)) {
+        Write-Host "ERROR: Pipeline template file not found at $thisTemplatePath"
+        exit 1
+    }
+
+    $pipelineJson = Get-Content $thisTemplatePath -Raw
     $pipelineJson = $pipelineJson.Replace("#{workspaceId}#", $WorkspaceId)
     $pipelineJson = $pipelineJson.Replace("#{lakehouseId}#", $LakehouseId)
-    $pipelineJson = $pipelineJson.Replace("#{sourceFile}#", $Config.sourceFile)
-    $pipelineJson = $pipelineJson.Replace("#{destinationTable}#", $Config.destinationTable)
-    $pipelineJson | Set-Content $pipelineOutputPath
+    $pipelineJson = $pipelineJson.Replace("#{sourceFile}#", $sourceFile)
+    $pipelineJson = $pipelineJson.Replace("#{destinationTable}#", $destinationTable)
+    $pipelineJson | Set-Content $thisOutputPath
 
     $pipelineTemplate = $pipelineJson | ConvertFrom-Json
     $pipelineContent = @{
@@ -524,26 +545,29 @@ function New-PipelineDefinition {
 function Ensure-DataPipeline {
     param (
         [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)]$PipelineConfig,
         [Parameter(Mandatory = $true)][string]$WorkspaceId,
         [Parameter(Mandatory = $true)]$Definition,
         [string]$FolderId = ""
     )
 
     $pipeline = $null
+    $pipelineId = $PipelineConfig.pipelineId
+    $pipelineName = $PipelineConfig.pipelineName
 
-    if (-not [string]::IsNullOrWhiteSpace($Config.pipelineId)) {
-        $existing = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/dataPipelines/$($Config.pipelineId)"
+    if (-not [string]::IsNullOrWhiteSpace($pipelineId)) {
+        $existing = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/dataPipelines/$pipelineId"
         $pipeline = $existing.Body
     }
     else {
         $pipelines = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/dataPipelines"
         $pipelineItems = Get-CollectionItems -ResponseBody $pipelines.Body
-        $pipeline = Get-FirstByDisplayName -Items $pipelineItems -DisplayName $Config.pipelineName
+        $pipeline = Get-FirstByDisplayName -Items $pipelineItems -DisplayName $pipelineName
     }
 
     if ($null -eq $pipeline) {
         $body = @{
-            displayName = $Config.pipelineName
+            displayName = $pipelineName
             description = "Created by Fabric Sales Analytics Accelerator"
             definition = $Definition
         }
@@ -561,7 +585,7 @@ function Ensure-DataPipeline {
         else {
             $pipelines = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/dataPipelines"
             $pipelineItems = Get-CollectionItems -ResponseBody $pipelines.Body
-            $pipeline = Get-FirstByDisplayName -Items $pipelineItems -DisplayName $Config.pipelineName
+            $pipeline = Get-FirstByDisplayName -Items $pipelineItems -DisplayName $pipelineName
         }
     }
     else {
@@ -577,7 +601,7 @@ function Ensure-DataPipeline {
         exit 1
     }
 
-    Set-ConfigValue -Config $Config -Name "pipelineId" -Value $pipeline.id
+    $PipelineConfig.pipelineId = $pipeline.id
     Save-Config -Config $Config
     Write-Host "Data pipeline ready:" $pipeline.displayName $pipeline.id
 
@@ -602,9 +626,9 @@ function Invoke-DataPipelineRun {
 }
 
 function New-NotebookDefinition {
-    param ([Parameter(Mandatory = $true)]$Config)
+    param ([Parameter(Mandatory = $true)]$NotebookConfig)
 
-    $notebookSourcePath = Join-Path $notebooksRoot "$($Config.notebookName).py"
+    $notebookSourcePath = Join-Path $notebooksRoot "$($NotebookConfig.notebookName).py"
 
     if (!(Test-Path $notebookSourcePath)) {
         Write-Host "ERROR: Notebook source file not found at $notebookSourcePath"
@@ -617,7 +641,7 @@ function New-NotebookDefinition {
         version = "1.0"
         metadata = @{
             type = "Notebook"
-            displayName = $Config.notebookName
+            displayName = $NotebookConfig.notebookName
         }
     } | ConvertTo-Json -Depth 20
     $platformPayload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($platform))
@@ -642,31 +666,35 @@ function New-NotebookDefinition {
 function Ensure-Notebook {
     param (
         [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)]$NotebookConfig,
         [Parameter(Mandatory = $true)][string]$WorkspaceId,
         [Parameter(Mandatory = $true)]$Definition,
         [string]$FolderId = ""
     )
 
-    if ([string]::IsNullOrWhiteSpace($Config.notebookName)) {
+    $notebookName = $NotebookConfig.notebookName
+    $notebookId = $NotebookConfig.notebookId
+
+    if ([string]::IsNullOrWhiteSpace($notebookName)) {
         Write-Host "Notebook deployment skipped because notebookName is blank."
         return ""
     }
 
     $notebook = $null
 
-    if (-not [string]::IsNullOrWhiteSpace($Config.notebookId)) {
-        $existing = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/notebooks/$($Config.notebookId)"
+    if (-not [string]::IsNullOrWhiteSpace($notebookId)) {
+        $existing = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/notebooks/$notebookId"
         $notebook = $existing.Body
     }
     else {
         $notebooks = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/notebooks"
         $notebookItems = Get-CollectionItems -ResponseBody $notebooks.Body
-        $notebook = Get-FirstByDisplayName -Items $notebookItems -DisplayName $Config.notebookName
+        $notebook = Get-FirstByDisplayName -Items $notebookItems -DisplayName $notebookName
     }
 
     if ($null -eq $notebook) {
         $body = @{
-            displayName = $Config.notebookName
+            displayName = $notebookName
             description = "Created by Fabric Sales Analytics Accelerator"
             definition = $Definition
         }
@@ -689,7 +717,7 @@ function Ensure-Notebook {
         else {
             $notebooks = Invoke-FabricApi -Method "GET" -Path "/workspaces/$WorkspaceId/notebooks"
             $notebookItems = Get-CollectionItems -ResponseBody $notebooks.Body
-            $notebook = Get-FirstByDisplayName -Items $notebookItems -DisplayName $Config.notebookName
+            $notebook = Get-FirstByDisplayName -Items $notebookItems -DisplayName $notebookName
         }
     }
     else {
@@ -710,11 +738,125 @@ function Ensure-Notebook {
         exit 1
     }
 
-    Set-ConfigValue -Config $Config -Name "notebookId" -Value $notebook.id
+    $NotebookConfig.notebookId = $notebook.id
     Save-Config -Config $Config
     Write-Host "Notebook ready:" $notebook.displayName $notebook.id
 
     return $notebook.id
+}
+
+function Get-PowerBIToken {
+    Write-Host "Fetching access token for Power BI REST API..."
+    $token = Get-AzAccessToken "https://analysis.windows.net/powerbi/api"
+    return $token
+}
+
+function Import-PowerBIReport {
+    param (
+        [Parameter(Mandatory = $true)][string]$WorkspaceId,
+        [Parameter(Mandatory = $true)][string]$PbixPath,
+        [Parameter(Mandatory = $true)][string]$ReportName
+    )
+
+    Write-Host "Preparing Power BI report deployment for: $ReportName"
+    $token = Get-PowerBIToken
+
+    # Encode the filename to avoid spaces/special characters breaking in URL
+    $escapedReportName = [Uri]::EscapeDataString("$ReportName.pbix")
+    $apiUrl = "https://api.powerbi.com/v1.0/myorg/groups/$WorkspaceId/imports?datasetDisplayName=$escapedReportName&nameConflict=Overwrite"
+
+    $httpClient = New-Object System.Net.Http.HttpClient
+    $httpClient.DefaultRequestHeaders.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", $token)
+
+    $fileStream = [System.IO.File]::OpenRead($PbixPath)
+    $fileContent = New-Object System.Net.Http.StreamContent($fileStream)
+    $fileContent.Headers.ContentType = New-Object System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream")
+
+    $content = New-Object System.Net.Http.MultipartFormDataContent
+    $content.Add($fileContent, "file", [System.IO.Path]::GetFileName($PbixPath))
+
+    Write-Host "Uploading PBIX to Power BI Import service..."
+    try {
+        $response = $httpClient.PostAsync($apiUrl, $content).Result
+        if (!$response.IsSuccessStatusCode) {
+            $errorMsg = $response.Content.ReadAsStringAsync().Result
+            Write-Host "ERROR: Power BI report import failed. Code: $($response.StatusCode). Details: $errorMsg"
+            $fileStream.Close()
+            exit 1
+        }
+
+        $importJson = $response.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+        $fileStream.Close()
+        return $importJson.id
+    }
+    catch {
+        Write-Host "ERROR: Failed during HttpClient request: $_"
+        if ($null -ne $fileStream) { $fileStream.Close() }
+        exit 1
+    }
+}
+
+function Wait-PowerBIImport {
+    param (
+        [Parameter(Mandatory = $true)][string]$WorkspaceId,
+        [Parameter(Mandatory = $true)][string]$ImportId
+    )
+
+    Write-Host "Polling PBIX import job status (ID: $ImportId)..."
+    
+    $token = Get-PowerBIToken
+    $apiUrl = "https://api.powerbi.com/v1.0/myorg/groups/$WorkspaceId/imports/$ImportId"
+
+    $httpClient = New-Object System.Net.Http.HttpClient
+    $httpClient.DefaultRequestHeaders.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", $token)
+
+    $startTime = Get-Date
+    while ($true) {
+        if (((Get-Date) - $startTime).TotalMinutes -gt 5) {
+            Write-Host "ERROR: Import operation timed out after 5 minutes."
+            exit 1
+        }
+
+        try {
+            $response = $httpClient.GetAsync($apiUrl).Result
+            if ($response.IsSuccessStatusCode) {
+                $statusJson = $response.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+                $status = $statusJson.importState
+                Write-Host "Current Import Status: $status"
+
+                if ($status -eq "Succeeded") {
+                    return $statusJson
+                }
+                elseif ($status -eq "Failed") {
+                    Write-Host "ERROR: Power BI Import failed. Details:" ($statusJson | ConvertTo-Json)
+                    exit 1
+                }
+            } else {
+                Write-Host "WARNING: Polling request failed with status: $($response.StatusCode)"
+            }
+        }
+        catch {
+            Write-Host "WARNING: Failed to request polling: $_"
+        }
+
+        Start-Sleep -Seconds 5
+    }
+}
+
+function Move-FabricItem {
+    param (
+        [Parameter(Mandatory = $true)][string]$WorkspaceId,
+        [Parameter(Mandatory = $true)][string]$ItemId,
+        [Parameter(Mandatory = $true)][string]$DestinationFolderId
+    )
+
+    Write-Host "Moving item (ID: $ItemId) to folder (ID: $DestinationFolderId)..."
+    $body = @{
+        destinationFolderId = $DestinationFolderId
+    }
+
+    $response = Invoke-FabricApi -Method "POST" -Path "/workspaces/$WorkspaceId/items/$ItemId/move" -Body $body
+    return $response
 }
 
 Write-Host ""
@@ -756,23 +898,135 @@ $config = Get-Content $configPath | ConvertFrom-Json
 
 if ($config.loadSampleData -eq $true) {
     Write-Step "Uploading sample data"
-    Upload-SampleData -WorkspaceId $workspaceId -LakehouseId $lakehouseId -SourceFile $config.sourceFile
+    $sourceFile = if ($null -ne $config.sourceFile) { $config.sourceFile } else { $config.pipelines[0].sourceFile }
+    Upload-SampleData -WorkspaceId $workspaceId -LakehouseId $lakehouseId -SourceFile $sourceFile
 }
 
+# 1. Deploy Fabric Notebooks
 $config = Get-Content $configPath | ConvertFrom-Json
-Write-Step "Generating and deploying Fabric data pipeline in Data Ingestion folder"
-$definition = New-PipelineDefinition -Config $config -WorkspaceId $workspaceId -LakehouseId $lakehouseId
-$pipelineId = Ensure-DataPipeline -Config $config -WorkspaceId $workspaceId -Definition $definition -FolderId $folderStructure.MainDataIngestion
+$hasNotebooksArray = ($null -ne $config.notebooks -and $config.notebooks.GetType().IsArray -and $config.notebooks.Count -gt 0)
 
-Write-Step "Executing Fabric data pipeline"
-Invoke-DataPipelineRun -WorkspaceId $workspaceId -PipelineId $pipelineId -PipelineName $config.pipelineName
+if ($hasNotebooksArray) {
+    Write-Step "Deploying Fabric notebooks"
+    foreach ($nb in $config.notebooks) {
+        $notebookDefinition = New-NotebookDefinition -NotebookConfig $nb
+        
+        # Map folder destination
+        $folderId = ""
+        if (-not [string]::IsNullOrWhiteSpace($nb.destinationFolder) -and $folderStructure.PSObject.Properties.Name -contains $nb.destinationFolder) {
+            $folderId = $folderStructure.$($nb.destinationFolder)
+        } else {
+            $folderId = $folderStructure.Notebooks
+        }
+
+        $notebookId = Ensure-Notebook -Config $config -NotebookConfig $nb -WorkspaceId $workspaceId -Definition $notebookDefinition -FolderId $folderId
+    }
+} elseif (-not [string]::IsNullOrWhiteSpace($config.notebookName)) {
+    Write-Step "Deploying Fabric notebook (singular fallback)"
+    $nbObj = [pscustomobject]@{
+        notebookName = $config.notebookName
+        notebookId = $config.notebookId
+    }
+    $notebookDefinition = New-NotebookDefinition -NotebookConfig $nbObj
+    $notebookId = Ensure-Notebook -Config $config -NotebookConfig $nbObj -WorkspaceId $workspaceId -Definition $notebookDefinition -FolderId $folderStructure.Notebooks
+    
+    # Save back to singular
+    Set-ConfigValue -Config $config -Name "notebookId" -Value $nbObj.notebookId
+    Save-Config -Config $config
+}
+
+# 2. Deploy Fabric Pipelines
+$config = Get-Content $configPath | ConvertFrom-Json
+$hasPipelinesArray = ($null -ne $config.pipelines -and $config.pipelines.GetType().IsArray -and $config.pipelines.Count -gt 0)
+
+$pipelineSummary = @()
+
+if ($hasPipelinesArray) {
+    Write-Step "Generating and deploying Fabric data pipelines"
+    foreach ($p in $config.pipelines) {
+        $pipelineDefinition = New-PipelineDefinition -PipelineConfig $p -WorkspaceId $workspaceId -LakehouseId $lakehouseId
+        
+        # Map folder destination
+        $folderId = ""
+        if (-not [string]::IsNullOrWhiteSpace($p.destinationFolder) -and $folderStructure.PSObject.Properties.Name -contains $p.destinationFolder) {
+            $folderId = $folderStructure.$($p.destinationFolder)
+        } else {
+            $folderId = $folderStructure.MainDataIngestion
+        }
+
+        $pipelineId = Ensure-DataPipeline -Config $config -PipelineConfig $p -WorkspaceId $workspaceId -Definition $pipelineDefinition -FolderId $folderId
+        $pipelineSummary += "[Array] $($p.pipelineName) (ID: $pipelineId)"
+
+        if ($p.runAfterProvisioning -eq $true) {
+            Write-Host "Triggering pipeline run for $($p.pipelineName)..."
+            Invoke-DataPipelineRun -WorkspaceId $workspaceId -PipelineId $pipelineId -PipelineName $p.pipelineName
+        }
+    }
+} else {
+    Write-Step "Generating and deploying Fabric data pipeline (singular fallback)"
+    $pObj = [pscustomobject]@{
+        pipelineName = $config.pipelineName
+        pipelineId = $config.pipelineId
+        sourceFile = $config.sourceFile
+        destinationTable = $config.destinationTable
+    }
+    $pipelineDefinition = New-PipelineDefinition -PipelineConfig $pObj -WorkspaceId $workspaceId -LakehouseId $lakehouseId
+    $pipelineId = Ensure-DataPipeline -Config $config -PipelineConfig $pObj -WorkspaceId $workspaceId -Definition $pipelineDefinition -FolderId $folderStructure.MainDataIngestion
+    $pipelineSummary += "[Singular] $($config.pipelineName) (ID: $pipelineId)"
+
+    # Save back to singular
+    Set-ConfigValue -Config $config -Name "pipelineId" -Value $pObj.pipelineId
+    Save-Config -Config $config
+
+    Write-Step "Executing Fabric data pipeline"
+    Invoke-DataPipelineRun -WorkspaceId $workspaceId -PipelineId $pipelineId -PipelineName $config.pipelineName
+}
+
+# 3. Deploy Power BI Report (.pbix)
+$config = Get-Content $configPath | ConvertFrom-Json
+if (-not [string]::IsNullOrWhiteSpace($config.pbixFile)) {
+    Write-Step "Deploying Power BI Report (.pbix)"
+    
+    $pbixPath = Join-Path $repoRoot "powerbi/$($config.pbixFile)"
+    if (!(Test-Path $pbixPath)) {
+        Write-Host "ERROR: Power BI report file not found at: $pbixPath"
+        exit 1
+    }
+
+    $reportName = [System.IO.Path]::GetFileNameWithoutExtension($config.pbixFile)
+    
+    # Import the report
+    $importId = Import-PowerBIReport -WorkspaceId $workspaceId -PbixPath $pbixPath -ReportName $reportName
+    
+    # Wait for the import to complete successfully
+    $importResult = Wait-PowerBIImport -WorkspaceId $workspaceId -ImportId $importId
+
+    # Map destination folder
+    $destFolderId = ""
+    if (-not [string]::IsNullOrWhiteSpace($config.pbixFolder) -and $folderStructure.PSObject.Properties.Name -contains $config.pbixFolder) {
+        $destFolderId = $folderStructure.$($config.pbixFolder)
+    } else {
+        $destFolderId = $folderStructure.PowerBIReports
+    }
+
+    # Move the newly imported report item to the Reports > Power BI Reports folder
+    if ($null -ne $importResult.reports -and $importResult.reports.Count -gt 0) {
+        foreach ($rep in $importResult.reports) {
+            Write-Host "Relocating report '$($rep.name)' (ID: $($rep.id)) to folder..."
+            $null = Move-FabricItem -WorkspaceId $workspaceId -ItemId $($rep.id) -DestinationFolderId $destFolderId
+        }
+    }
+    Write-Host "Power BI report deployed successfully!"
+}
 
 Write-Host ""
 Write-Host "Provisioning completed successfully."
 Write-Host "Workspace ID:" $workspaceId
 Write-Host "Lakehouse ID:" $lakehouseId
-Write-Host "Pipeline ID:" $pipelineId
-Write-Host "Pipeline JSON:" $pipelineOutputPath
+Write-Host "Pipelines deployed:"
+foreach ($sum in $pipelineSummary) {
+    Write-Host "  -$sum"
+}
 Write-Host "Folder Structure:"
 Write-Host "  - Data Ingestion (ID: $($folderStructure.DataIngestion))"
 Write-Host "    - Main Data Ingestion (ID: $($folderStructure.MainDataIngestion))"

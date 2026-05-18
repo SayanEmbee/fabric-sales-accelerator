@@ -30,8 +30,22 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Get-Content .\config\accelerator-config.json -Raw | ConvertFrom-Json | Out-Null
-          Get-Content .\config\salesdatapipeline.json -Raw | ConvertFrom-Json | Out-Null
+          $config = Get-Content .\config\accelerator-config.json -Raw | ConvertFrom-Json
+          
+          # Validate all pipeline templates referenced in config
+          $templates = @()
+          if ($null -ne $config.pipelines -and $config.pipelines.GetType().IsArray) {
+            foreach ($p in $config.pipelines) {
+              $tName = if ([string]::IsNullOrEmpty($p.templateName)) { "salesdatapipeline.json" } else { $p.templateName }
+              $templates += ".\config\$tName"
+            }
+          } else {
+            $templates += ".\config\salesdatapipeline.json"
+          }
+          
+          foreach ($t in $templates | Select-Object -Unique) {
+            Get-Content $t -Raw | ConvertFrom-Json | Out-Null
+          }
 
       - name: Validate PowerShell syntax
         shell: pwsh
@@ -40,7 +54,8 @@ jobs:
           $files = @(
             '.\infra\create-capacity.ps1',
             '.\scripts\deploy.ps1',
-            '.\scripts\provision-fabric.ps1'
+            '.\scripts\provision-fabric.ps1',
+            '.\scripts\azd-deploy.ps1'
           )
 
           foreach ($file in $files) {
@@ -57,14 +72,34 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $config = Get-Content .\config\accelerator-config.json -Raw | ConvertFrom-Json
+          
           $requiredFiles = @(
-            '.\data\sales.csv',
-            '.\notebooks\sales_transform.py',
             '.\powerbi\SalesDashboard.pbix',
             '.\README.md'
           )
-
-          foreach ($file in $requiredFiles) {
+          
+          # Add datasets from pipelines config
+          if ($null -ne $config.pipelines -and $config.pipelines.GetType().IsArray) {
+            foreach ($p in $config.pipelines) {
+              $requiredFiles += ".\data\$($p.sourceFile)"
+            }
+          } else {
+            $requiredFiles += ".\data\$($config.sourceFile)"
+          }
+          
+          # Add notebooks from notebooks config
+          if ($null -ne $config.notebooks -and $config.notebooks.GetType().IsArray) {
+            foreach ($nb in $config.notebooks) {
+              $requiredFiles += ".\notebooks\$($nb.notebookName).py"
+            }
+          } else {
+            if (-not [string]::IsNullOrWhiteSpace($config.notebookName)) {
+              $requiredFiles += ".\notebooks\$($config.notebookName).py"
+            }
+          }
+          
+          foreach ($file in $requiredFiles | Select-Object -Unique) {
             if (!(Test-Path $file)) {
               throw "Missing required file: $file"
             }

@@ -1,0 +1,9 @@
+# azure.yaml
+name: fabric-sales-analytics
+metadata:
+  template: fabric-sales-analytics@0.0.1-alpha
+hooks:
+  preprovision:
+    run: powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/azd-deploy.ps1
+    shell: pwsh
+    interactive: true

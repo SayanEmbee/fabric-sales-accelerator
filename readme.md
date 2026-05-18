@@ -1,409 +1,211 @@
 # Fabric Sales Analytics Accelerator
 
-A beginner-friendly Microsoft Fabric accelerator for creating a small sales analytics solution with Azure/Fabric capacity, a Lakehouse pipeline template, sample sales data, and a Power BI report.
+A beginner-friendly, production-ready Microsoft Fabric accelerator for creating a complete sales analytics solution with Azure/Fabric capacity, a Lakehouse pipeline template, sample sales data, a PySpark notebook transformation, and an automated Power BI dashboard.
+
+This repository demonstrates how to package, deploy, and govern Microsoft Fabric infrastructure-as-code (IaC) using Azure CLI, Fabric REST APIs, PySpark compute, and GitHub Actions CI/CD pipelines.
+
+---
 
 ## Features
 
-- Azure resource group and Microsoft Fabric F2 capacity script
-- Automated Fabric workspace creation
-- Automated Lakehouse creation
-- Automated sample data upload to OneLake
-- Automated Fabric data pipeline import/deployment
-- Automated Fabric notebook import/deployment
-- GitHub Actions validation and optional provisioning workflow
-- Lakehouse copy pipeline template for CSV to Lakehouse table loading
-- Sample sales dataset
-- PowerShell deployment helper
-- Power BI dashboard file
-- Repo structure ready for notebooks, pipeline exports, and future CI/CD
-
-## Start Here for Beginners
-
-Follow these steps in order if you are new to Azure, Fabric, or PowerShell.
-
-### 1. Clone This Repository
-
-Open PowerShell and run:
-
-```powershell
-git clone https://github.com/SayanEmbee/fabric-sales-accelerator.git
-```
-
-This downloads the accelerator code to your machine.
-
-### 2. Open PowerShell in the Project Folder
-
-Go to the project folder:
-
-```powershell
-cd fabric-sales-accelerator
-```
-
-If you cloned it somewhere specific, go to that folder instead. Example:
-
-```powershell
-cd C:\Users\015237\Desktop\fabric-sales-accelerator
-```
-
-### 3. Check Azure CLI
-
-Run:
-
-```powershell
-az --version
-```
-
-If this command is not found, install Azure CLI first:
-
-```text
-https://learn.microsoft.com/cli/azure/install-azure-cli
-```
-
-### 4. Login to Azure
-
-Run:
-
-```powershell
-az login
-```
-
-Then confirm the active subscription:
-
-```powershell
-az account show
-```
-
-If the wrong subscription is active, set the correct one:
-
-```powershell
-az account set --subscription "<your-subscription-id>"
-```
-
-### 5. Install the Fabric CLI Extension
-
-Run:
-
-```powershell
-az extension add --name microsoft-fabric --allow-preview true
-```
-
-### 6. Review the Config File
-
-Open:
-
-```text
-config/accelerator-config.json
-```
-
-For a first run, you can leave these values blank:
-
-- `workspaceId`
-- `lakehouseId`
-- `pipelineId`
-- `notebookId`
-- `subscriptionId`
-- `capacityId`
-
-The scripts fill them in after resources are created or found.
-
-You can change these names if needed:
-
-- `workspaceName`
-- `lakehouseName`
-- `pipelineName`
-- `notebookName`
-- `resourceGroup`
-- `capacityName`
-- `location`
-
-### 7. Create Fabric Capacity
-
-This step can create Azure cost. Run it only when you are ready:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1
-```
-
-The script will ask you to:
-
-- Choose which Azure subscription to use
-- Enter the resource group name
-- Enter the Fabric capacity name
-
-If you press Enter for resource group or capacity name, the script uses the default values from `config/accelerator-config.json`.
-
-### 8. Provision the Fabric Accelerator
-
-Run:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\provision-fabric.ps1
-```
-
-This creates or updates:
-
-- Fabric workspace
-- Lakehouse
-- Sample data upload
-- Notebook
-- Data pipeline
-
-### 9. Check the Results
-
-After the script completes, check:
-
-- `config/accelerator-config.json` now has generated IDs
-- `pipelines/salesdatapipeline.json` exists
-- The Fabric workspace exists in the Fabric portal
-- The Lakehouse contains `sales.csv` under `Files`
-- The notebook and pipeline exist in the workspace
-
-### 10. Common Beginner Fixes
-
-If PowerShell says scripts are disabled, use the commands exactly as shown with:
-
-```powershell
--ExecutionPolicy Bypass
-```
-
-If Azure says you do not have permission, ask your Azure/Fabric admin for:
-
-- Permission to create resource groups or Fabric capacity
-- Permission to create Fabric workspaces
-- Contributor access to the target Fabric workspace or capacity
-
-If the Fabric extension install fails, run:
-
-```powershell
-az config set extension.dynamic_install_allow_preview=true
-az extension add --name microsoft-fabric --allow-preview true
-```
-
-## Project Structure
-
-```text
-fabric-sales-accelerator/
-|
-+-- config/
-|   +-- accelerator-config.json
-|   +-- salesdatapipeline.json
-+-- data/
-|   +-- sales.csv
-+-- infra/
-|   +-- create-capacity.ps1
-+-- notebooks/
-|   +-- sales_transform.py
-+-- pipelines/
-+-- powerbi/
-|   +-- SalesDashboard.pbix
-+-- scripts/
-    +-- deploy.ps1
-    +-- provision-fabric.ps1
-+-- .github/
-    +-- workflows/
-        +-- ci.yml
-```
-
-## Prerequisites
-
-- Azure CLI installed and logged in
-- Microsoft Fabric Azure CLI extension
-- PowerShell 5.1 or later
-- Permission to create Microsoft Fabric workspaces
-- Contributor access to the target Fabric capacity/workspace
-- Permission to create or manage Fabric capacity in the Azure subscription
-
-Install the Fabric CLI extension if needed:
-
-```powershell
-az extension add --name microsoft-fabric --allow-preview true
-```
-
-Check Azure login:
-
-```powershell
-az account show
-```
-
-## Configuration
-
-Update `config/accelerator-config.json` before deployment:
-
+- **One-Click Deployments:** Complete Azure-to-Fabric provisioning via interactive `azd up` integration.
+- **Enterprise Folder Cleanliness:** Automatically creates standard subfolders (`Data Ingestion`, `Resources`, `Reports`) in the workspace to organize assets by role.
+- **Data Ingestion Copy Pipeline:** Multi-pipeline/notebook array capability to load csv/tabular datasets into managed Lakehouse Delta tables.
+- **Spark Transformations:** Out-of-the-box PySpark notebook for computing regional sales aggregates.
+- **Automated Dashboard Publishing:** Uploads and polls Power BI desktop `.pbix` templates to the Fabric workspace via binary imports and relocates them into the workspace folders.
+- **CI/CD Validation:** Automatically validates JSON, PowerShell syntax, and resource availability on push/pull requests.
+
+---
+
+## 1. Quick Start & Deployment Guide
+
+Follow these steps in order to deploy the accelerator to Azure and Microsoft Fabric.
+
+### Prerequisites
+1. **Azure CLI:** Ensure Azure CLI is installed and logged in (`az login`).
+2. **Fabric Extension:** Install the Microsoft Fabric extension:
+   ```powershell
+   az extension add --name microsoft-fabric --allow-preview true
+   ```
+3. **Active Azure Subscription:** Verify your active subscription via `az account show`.
+
+### Configuration Layer
+Open [config/accelerator-config.json](config/accelerator-config.json). For a fresh run, you can leave the ID fields blank—our automation scripts will discover the resources and write them back into this config automatically!
 ```json
 {
-  "workspaceName": "SalesAnalyticsWorkspace",
+  "workspaceName": "SalesAnalyticsWorkspaceNew",
   "workspaceId": "",
   "lakehouseName": "SalesLakehouse",
   "lakehouseId": "",
-  "pipelineName": "salesdatapipeline",
-  "pipelineId": "",
-  "notebookName": "sales_transform",
-  "notebookId": "",
+  "pipelines": [
+    {
+      "pipelineName": "salesdatapipeline",
+      "pipelineId": "",
+      "templateName": "salesdatapipeline.json",
+      "sourceFile": "sales.csv",
+      "destinationTable": "sales",
+      "destinationFolder": "MainDataIngestion",
+      "runAfterProvisioning": true
+    }
+  ],
+  "notebooks": [
+    {
+      "notebookName": "sales_transform",
+      "notebookId": "",
+      "destinationFolder": "Notebooks"
+    }
+  ],
+  "pbixFile": "SalesDashboard.pbix",
+  "pbixFolder": "PowerBIReports",
   "subscriptionId": "",
   "resourceGroup": "rg-fabric-dev",
-  "capacityName": "fabricf2dev",
+  "capacityName": "fabriccapacitydev",
   "capacityId": "",
   "location": "CentralIndia",
   "capacitySku": "F2",
-  "sourceFile": "sales.csv",
-  "destinationTable": "sales",
   "loadSampleData": true
 }
 ```
 
-Leave `workspaceId`, `lakehouseId`, `pipelineId`, `notebookId`, `subscriptionId`, and `capacityId` blank for a first run. The automation script fills them in after it finds or creates the resources.
+---
 
-## Create Fabric Capacity
+### Choose Your Deployment Method
 
-Run this only when you want to create or update Azure resources. Fabric capacity can create Azure cost.
+#### Option A: One-Click Interactive Deployment (`azd up`)
+If you have the **Azure Developer CLI (`azd`)** installed, you can trigger the entire end-to-end deployment with a single interactive command:
+```powershell
+azd up
+```
+This will automatically prompt you for:
+- Your desired **Azure Resource Group Name**
+- Your desired **Fabric Capacity Name**
+- Your desired **Fabric Workspace Name**
 
+Once entered, `azd` will configure your config JSON, deploy your Azure capacity, set up the Fabric workspace folder structure, upload data, deploy notebooks and pipelines, and publish your Power BI report!
+
+#### Option B: Step-by-Step Manual Deployment
+If you do not use `azd`, run the deployment scripts manually in order:
+
+##### Step 1: Create Fabric Capacity
+Create your Azure Resource Group and Microsoft Fabric F2 capacity:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1
 ```
+The script will prompt you for your Azure subscription, resource group name, and capacity name (pressing Enter uses config defaults).
 
-The script prompts you to choose the Azure subscription and enter the resource group and capacity names.
-
-The script creates or updates:
-
-- Resource group: the name you enter
-- Capacity: the name you enter
-- SKU: the `capacitySku` value from config
-- Location: the `location` value from config
-
-It saves `subscriptionId`, `resourceGroup`, `capacityName`, and `capacityId` back into `config/accelerator-config.json`.
-
-For unattended runs, such as GitHub Actions, use config values without prompting:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1 -UseConfig
-```
-
-You can also pass values directly:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\infra\create-capacity.ps1 -SubscriptionId "<subscription-id>" -ResourceGroup "<resource-group-name>" -CapacityName "<capacity-name>"
-```
-
-## Provision Fabric Accelerator
-
-Run the full Fabric automation:
-
+##### Step 2: Provision Fabric Accelerator
+Run the main Fabric asset provisioning orchestrator:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\provision-fabric.ps1
 ```
 
-This script:
+---
 
-- Finds or creates the Fabric workspace
-- Finds or creates the Lakehouse
-- Uploads `data/sales.csv` into the Lakehouse `Files` area
-- Creates or updates the Fabric notebook item from `notebooks/sales_transform.py`
-- Generates `pipelines/salesdatapipeline.json`
-- Creates or updates the Fabric data pipeline item
-- Saves discovered IDs back into `config/accelerator-config.json`
+## 2. Technical Architecture & Ingestion Flow
 
-## Notebook Automation
+The accelerator coordinates resources in two logical phases: **Infrastructure Provisioning** and **Fabric Asset Provisioning**.
 
-Notebook source:
-
-```text
-notebooks/sales_transform.py
+```mermaid
+graph TD
+    A[Start: azd up] --> B[Run azd-deploy.ps1]
+    B --> B1[Prompt for RG, Capacity, & Workspace Name]
+    B1 --> B2[Save values to config JSON]
+    B2 --> C[Run create-capacity.ps1]
+    C --> C1[Verify Azure Login & Subscription]
+    C1 --> C2[Provision Azure Resource Group]
+    C2 --> C3[Create Fabric F2 Capacity]
+    C3 --> C4[Save Capacity ID to config JSON]
+    C4 --> D[Run provision-fabric.ps1]
+    D --> D1[Ensure Fabric Workspace]
+    D1 --> D2[Assign Workspace to Capacity]
+    D2 --> D3[Create Workspace Subfolders]
+    D3 --> D4[Ensure Lakehouse inside Resources/Lakehouses]
+    D4 --> D5[Upload CSV dataset to OneLake Files]
+    D5 --> D6[Deploy PySpark Notebook to Resources/Notebooks]
+    D6 --> D7[Inject IDs & Deploy Copy Pipeline to Ingestion/Main Ingestion]
+    D7 --> D8[Post Binary PBIX Report to Workspace]
+    D8 --> D9[Relocate PBIX Report to Reports/Power BI Reports]
+    D9 --> D10[Trigger Ingestion Pipeline Run]
+    D10 --> E[End: Provisioning Successful]
 ```
 
-The provisioning script deploys it as a Fabric notebook using the Notebook REST API in `fabricGitSource` format. The notebook reads the `sales` table and writes a Delta summary table named `sales_summary_by_region`.
+### Configuration Schema Reference
+Below is an overview of the key properties in [config/accelerator-config.json](config/accelerator-config.json):
 
-## CI/CD
+| Property | Description | Mode |
+| :--- | :--- | :--- |
+| `workspaceName` | Name of the Fabric workspace to create/use. | User Defined |
+| `workspaceId` | Unique ID of the created Fabric Workspace. | Auto-Populated |
+| `lakehouseName` | Name of the Fabric Lakehouse to create/use. | User Defined |
+| `lakehouseId` | Unique ID of the created Lakehouse. | Auto-Populated |
+| `pipelines` | Array of pipelines to configure, deploy, and trigger. | User Defined |
+| `notebooks` | Array of Spark notebooks to deploy. | User Defined |
+| `pbixFile` | Local `.pbix` file path under `powerbi/` to deploy. | User Defined |
+| `pbixFolder` | Workspace folder to store the uploaded report. | User Defined |
+| `subscriptionId` | Active Azure subscription ID for billing. | Auto-Populated |
+| `resourceGroup` | Name of the capacity Resource Group. | User Defined |
+| `capacityName` | Name of the Fabric Capacity to deploy/verify. | User Defined |
+| `capacitySku` | Capacity size (minimum F2 capacity). | User Defined |
 
-GitHub Actions workflow:
+---
 
-```text
-.github/workflows/ci.yml
+## 3. Data Lifecycle & Transformation Architecture
+
+### Phase 1: Raw Ingestion (Data Pipeline Copy Activity)
+The deployment script takes the copy pipeline template [config/salesdatapipeline.json](config/salesdatapipeline.json) and replaces placeholders (`#{workspaceId}#`, `#{lakehouseId}#`, etc.) to generate a ready-to-deploy pipeline under `pipelines/`.
+The copy pipeline takes `sales.csv` from OneLake `Files/` and maps it directly to a managed Delta Table named `sales` (`Tables/sales`), performing automatic data-type conversions on schema mappings.
+
+### Phase 2: PySpark Notebook Transformations
+Once the raw logs are loaded, the Spark transformation notebook [notebooks/sales_transform.py](notebooks/sales_transform.py) aggregates regional KPIs:
+
+```python
+from pyspark.sql import functions as F
+
+source_table = "sales"
+summary_table = "sales_summary_by_region"
+
+# Read the raw table
+sales_df = spark.table(source_table)
+
+# Group by Region and compute KPIs
+summary_df = (
+    sales_df
+    .groupBy("Region")
+    .agg(
+        F.count("*").alias("OrderCount"),
+        F.sum("SalesAmount").alias("TotalSalesAmount"),
+        F.avg("SalesAmount").alias("AverageSalesAmount"),
+        F.min("OrderDate").alias("FirstOrderDate"),
+        F.max("OrderDate").alias("LastOrderDate"),
+    )
+    .orderBy("Region")
+)
+
+# Write as an overwrite delta table
+summary_df.write.mode("overwrite").format("delta").saveAsTable(summary_table)
+display(summary_df)
 ```
 
-The `validate` job runs on push and pull request. It checks:
+---
 
-- JSON syntax
-- PowerShell syntax
-- Required accelerator assets
+## 4. CI/CD & Validation Pipelines
 
-The `provision` job is manual-only through `workflow_dispatch`. Set `provision_fabric` to `true` when starting the workflow. It requires these GitHub secrets:
+The repository includes a comprehensive GitHub Actions workflow at [.github/workflows/ci.yml](.github/workflows/ci.yml) consisting of two stages:
 
-- `AZURE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-- `AZURE_SUBSCRIPTION_ID`
+1. **`validate` (Runs on every Push and PR):**
+   - **JSON Linting:** Validates the formatting of `config/accelerator-config.json` and `config/salesdatapipeline.json`.
+   - **PowerShell Tokenizer:** Uses standard PowerShell tokenization parsing to assert that all scripts (`create-capacity.ps1`, `deploy.ps1`, `provision-fabric.ps1`, `azd-deploy.ps1`) are 100% free of syntax errors.
+   - **Asset Integrity:** Verifies that required local files (`sales.csv`, `SalesDashboard.pbix`, `sales_transform.py`) exist.
+2. **`provision` (Manual Trigger Only via `workflow_dispatch`):**
+   - Connects to Azure using a service principal/identity via OIDC (`azure/login@v2`).
+   - Installs the Microsoft Fabric CLI Extension.
+   - Automatically provisions the full Azure capacity (`create-capacity.ps1 -UseConfig`) and deploys the entire Fabric workspace and pipeline hierarchy (`provision-fabric.ps1`).
 
-The Azure identity must have permission to create/manage the Azure capacity and Fabric resources.
+---
 
-## Generate Pipeline Only
+## 5. Architecture Highlights & Design Best Practices
 
-After `workspaceId` and `lakehouseId` are set, run:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy.ps1
-```
-
-This reads the template from:
-
-```text
-config/salesdatapipeline.json
-```
-
-And generates the deployable pipeline JSON at:
-
-```text
-pipelines/salesdatapipeline.json
-```
-
-## Data
-
-Sample file:
-
-```text
-data/sales.csv
-```
-
-The pipeline expects this file to be available in the Lakehouse `Files` area using the configured `sourceFile` value.
-
-## Current Status
-
-- [x] Repository structure
-- [x] Configuration file
-- [x] Sample dataset
-- [x] Capacity creation script
-- [x] Pipeline template
-- [x] Pipeline generation script
-- [x] Power BI dashboard file
-- [x] Automated Fabric workspace creation
-- [x] Automated Lakehouse creation
-- [x] Automated sample data upload
-- [x] Automated pipeline import/deployment to Fabric
-- [x] Notebook automation
-- [x] CI/CD
-
-## Validation
-
-Basic local checks:
-
-```powershell
-Get-Content .\config\accelerator-config.json -Raw | ConvertFrom-Json
-Get-Content .\config\salesdatapipeline.json -Raw | ConvertFrom-Json
-```
-
-PowerShell parser checks:
-
-```powershell
-$files = @('.\infra\create-capacity.ps1', '.\scripts\deploy.ps1', '.\scripts\provision-fabric.ps1')
-foreach ($file in $files) {
-  $errors = $null
-  $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content $file -Raw), [ref]$errors)
-  if ($errors) { $errors; exit 1 }
-}
-```
-
-If PowerShell blocks script execution, use the `-ExecutionPolicy Bypass` command shown above. This bypass is process-scoped for that command.
-
-## Future Enhancements
-
-- Medallion architecture
-- Incremental data loading
-- Automated Power BI publishing
+- **Strict Idempotency:** Every script is engineered with the "Ensure" pattern. It inspects if the resource group, capacity, workspace, folder structure, lakehouse, pipeline, notebook, or report already exists, preventing dual allocation and making it 100% safe to rerun.
+- **Enterprise Workspace Folders:** Instead of deploying assets to a flat workspace, this accelerator structures files using the Fabric Folders API (`Data Ingestion`, `Resources`, and `Reports` directories) to match professional governance standards.
+- **Zero Hardcoding:** All configuration variables are extracted to [config/accelerator-config.json](config/accelerator-config.json) to allow flawless environment promotions (Dev, Test, Prod).
+- **Delta Lake Storage:** Raw sales data and summary metrics are stored as Delta Lake tables to enable full transactional ACID compliance and time travel.
