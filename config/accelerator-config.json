@@ -2,6 +2,7 @@
   "workspaceName": "SalesAnalyticsWorkspace",
   "workspaceId": "",
   "lakehouseName": "SalesLakehouse",
+  "lakehouseId": "",
   "pipelineName": "salesdatapipeline",
   "capacityName": "fabricf2dev",
   "sourceFile": "sales.csv",

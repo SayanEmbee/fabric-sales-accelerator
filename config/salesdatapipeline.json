@@ -67,7 +67,7 @@
 
                       "typeProperties": {
                         "workspaceId": "#{workspaceId}#",
-                        "artifactId": "[parameters('SalesLakehouse')]",
+                        "artifactId": "#{lakehouseId}#",
                         "rootFolder": "Files"
                       }
                     }
@@ -110,7 +110,7 @@
 
                       "typeProperties": {
                         "workspaceId": "#{workspaceId}#",
-                        "artifactId": "[parameters('SalesLakehouse')]",
+                        "artifactId": "#{lakehouseId}#",
                         "rootFolder": "Tables"
                       }
                     }
